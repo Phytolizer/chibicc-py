@@ -4,15 +4,16 @@ from typing import TextIO
 from chibicc.write import write
 
 
-def parsenum(p: str) -> tuple[int, str]:
-    endp = 1
-    while p[:endp].isdigit() and endp < len(p):
+def split_at(s: str, i: int) -> tuple[str, str]:
+    return s[:i], s[i:]
+
+
+def parsenum(p: str) -> tuple[str, str]:
+    endp = 0
+    while endp < len(p) and p[endp].isdigit():
         endp += 1
 
-    if endp < len(p):
-        endp -= 1
-
-    return int(p[:endp]), p[endp:]
+    return split_at(p, endp)
 
 
 def chibicc(args: list[str], writer: TextIO) -> int:
