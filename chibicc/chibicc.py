@@ -5,6 +5,18 @@ from typing import NoReturn, Optional, TextIO, cast
 from chibicc.write import write
 
 
+def split_at(s: str, i: int) -> tuple[str, str]:
+    return s[:i], s[i:]
+
+
+def parse_num(p: str) -> tuple[str, str]:
+    for i, c in enumerate(p):
+        if not c.isdigit():
+            return split_at(p, i)
+
+    return p, ""
+
+
 class Token:
     class Kind(Enum):
         PUNCT = auto()
@@ -14,11 +26,13 @@ class Token:
     kind: Kind
     _next: Optional["Token"]
     val: int
-    loc: str
+    begin: int
+    end: int
 
-    def __init__(self, kind: Kind, start: str) -> None:
+    def __init__(self, kind: Kind, begin: int, end: int) -> None:
         self.kind = kind
-        self.loc = start
+        self.begin = begin
+        self.end = end
         self._next = None
         self.val = 0
 
@@ -31,67 +45,64 @@ class Token:
         self._next = next
 
 
-class Failure(RuntimeError):
-    pass
+class Parser:
+    current_input: str
 
+    def __init__(self, text):
+        self.current_input = text
 
-def error(*args, **kwargs) -> NoReturn:
-    print(*args, **kwargs, file=stderr)
-    raise Failure()
+    class Failure(RuntimeError):
+        pass
 
+    def error_at(self, loc: int, *args, **kwargs) -> NoReturn:
+        print(self.current_input, file=stderr)
+        print(" " * loc, file=stderr, end="")
+        print("^ ", file=stderr, end="")
+        print(*args, **kwargs, file=stderr)
+        raise Parser.Failure()
 
-def equal(tok: Token, op: str) -> bool:
-    return tok.loc == op
+    def error_tok(self, tok: Token, *args, **kwargs) -> NoReturn:
+        self.error_at(tok.begin, *args, **kwargs)
 
+    def equal(self, tok: Token, op: str) -> bool:
+        return self.current_input[tok.begin : tok.end] == op
 
-def skip(tok: Token, s: str) -> Token:
-    if equal(tok, s):
-        return cast(Token, tok.next)
+    def skip(self, tok: Token, s: str) -> Token:
+        if self.equal(tok, s):
+            return cast(Token, tok.next)
 
-    error(f"expected '{s}' but got '{tok.loc}'")
+        self.error_tok(tok, f"expected '{s}'")
 
+    def get_num(self, tok: Token) -> int:
+        if tok.kind != Token.Kind.NUM:
+            self.error_tok(tok, "expected number")
 
-def get_num(tok: Token) -> int:
-    if tok.kind != Token.Kind.NUM:
-        error(f"expected number but got '{tok.loc}'")
+        return tok.val
 
-    return tok.val
+    def tokenize(self) -> Token:
+        i = 0
+        head = Token(Token.Kind.NUM, 0, 0)
+        cur = head
 
+        while i < len(self.current_input):
+            match self.current_input[i]:
+                case c if c.isspace():
+                    i += 1
+                case c if c.isdigit():
+                    text, _ = parse_num(self.current_input[i:])
+                    i += len(text)
+                    cur.next = Token(Token.Kind.NUM, i, i + len(text))
+                    cur.next.val = int(text)
+                    cur = cur.next
+                case "+" | "-":
+                    cur.next = Token(Token.Kind.PUNCT, i, i + 1)
+                    cur = cur.next
+                    i += 1
+                case c:
+                    self.error_at(i, "invalid token")
 
-def split_at(s: str, i: int) -> tuple[str, str]:
-    return s[:i], s[i:]
-
-
-def parsenum(p: str) -> tuple[str, str]:
-    for i, c in enumerate(p):
-        if not c.isdigit():
-            return split_at(p, i)
-
-    return p, ""
-
-
-def tokenize(p: str) -> Token:
-    head = Token(Token.Kind.NUM, "")
-    cur = head
-
-    while len(p) > 0:
-        match p[0]:
-            case c if c.isspace():
-                p = p[1:]
-            case c if c.isdigit():
-                text, p = parsenum(p)
-                cur.next = Token(Token.Kind.NUM, text)
-                cur.next.val = int(text)
-                cur = cur.next
-            case "+" | "-":
-                cur.next = Token(Token.Kind.PUNCT, p[0])
-                cur = cur.next
-                p = p[1:]
-            case c:
-                error(f"unexpected character '{c}'")
-
-    cur.next = Token(Token.Kind.EOF, "")
-    return cast(Token, head.next)
+        cur.next = Token(Token.Kind.EOF, i, i)
+        return cast(Token, head.next)
 
 
 def chibicc(args: list[str], writer: TextIO) -> int:
@@ -99,27 +110,29 @@ def chibicc(args: list[str], writer: TextIO) -> int:
         write(stderr, f"{args[0]}: invalid number of arguments")
         return 1
 
-    p = args[1]
-    if len(p) == 0:
+    text = args[1]
+    if len(text) == 0:
         write(stderr, "you can't trick me")
         return 1
 
+    p = Parser(text)
+
     try:
-        tok = tokenize(p)
-    except Failure:
+        tok = p.tokenize()
+    except Parser.Failure:
         return 1
 
     write(writer, "    .global main")
     write(writer, "main:")
-    write(writer, f"    mov ${get_num(tok)}, %rax")
+    write(writer, f"    mov ${p.get_num(tok)}, %rax")
     tok = tok.next
     while tok.kind != Token.Kind.EOF:
-        if equal(tok, "+"):
-            write(writer, f"    add ${get_num(tok.next)}, %rax")
+        if p.equal(tok, "+"):
+            write(writer, f"    add ${p.get_num(tok.next)}, %rax")
             tok = tok.next.next
         else:
-            tok = skip(tok, "-")
-            write(writer, f"    sub ${get_num(tok)}, %rax")
+            tok = p.skip(tok, "-")
+            write(writer, f"    sub ${p.get_num(tok)}, %rax")
             tok = tok.next
 
     write(writer, "    ret")
