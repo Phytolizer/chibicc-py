@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from enum import Enum, auto
 from sys import stderr
 from typing import NoReturn, Optional, TextIO, cast
@@ -6,7 +5,6 @@ from typing import NoReturn, Optional, TextIO, cast
 from chibicc.write import write
 
 
-@dataclass(init=False)
 class Token:
     class Kind(Enum):
         PUNCT = auto()
