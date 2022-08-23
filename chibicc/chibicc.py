@@ -1,4 +1,3 @@
-from curses.ascii import isdigit, isspace
 from dataclasses import dataclass
 from enum import Enum, auto
 from sys import stderr
