@@ -24,5 +24,5 @@ jobs:
         poetry-version: "1.1.15"
     - name: Test with pytest
       run: |
-        poetry install
+        poetry install --no-dev
         poetry run pytest
