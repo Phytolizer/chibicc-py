@@ -32,8 +32,11 @@ def check_output(args: list[str], expected_code: int):
         try:
             run_result = subprocess.run([PurePath(tmpdir) / "out"])
         except subprocess.SubprocessError:
-            pytest.fail("gcc failed to run?")
-        assert run_result.returncode == expected_code
+            pytest.fail("compiled program failed to run")
+        if run_result.returncode != expected_code:
+            with open(PurePath(tmpdir) / "out.s", "r") as f:
+                print(f.read())
+            pytest.fail(f"expected {expected_code} but got {run_result.returncode}")
 
 
 def test_0_returns_0():
@@ -46,3 +49,7 @@ def test_42_returns_42():
 
 def test_plus_minus():
     check_output(["5+20-4"], 21)
+
+
+def test_with_whitespace():
+    check_output([" 12 + 34 - 5 "], 41)
